@@ -407,6 +407,8 @@ lines(test_data$Order_Hour_Range, y_pred, col = "red", lwd = 2, lty = 2)
 legend("topleft", legend = c("Thực tế", "Dự báo"), col = c("blue", "red"), lty = c(1,2), lwd = 2)
 
 
+
+#Dự báo 7 ngày tiếp theo bằng XGBoost
 library(dplyr)
 library(caret)
 library(xgboost)
@@ -540,6 +542,97 @@ ggplot(df_pred, aes(x = Date, y = Predicted_Order_Count)) +
   labs(title = "Dự Báo Số Lượng Đơn Hàng 7 Ngày Tương Lai",
        x = "Ngày", y = "Số Lượng Đơn Hàng Dự Báo") +
   theme_minimal()
+
+
+
+
+use_python("C:/Users/minhh/AppData/Local/ProgramPrograms/Python/Python312", required = TRUE)
+python --version
+py_config()
+# Tải các thư viện
+library(keras)
+library(caret)
+library(Metrics)
+library(lmtest)
+library(reticulate)
+library(dplyr)
+# Giả sử bạn đã có dữ liệu 'full_order_counts' với các cột 'Order_Hour_Range' và 'Order_Count'
+
+# Chia dữ liệu thành 5 fold
+set.seed(123)
+folds <- createFolds(full_order_counts$Order_Count, k = 5)
+
+# Khởi tạo các vector để lưu kết quả
+mse_values <- c()
+mae_values <- c()
+r_squared_values <- c()
+adj_r_squared_values <- c()
+
+
+# Thực hiện quá trình huấn luyện và đánh giá trên từng fold
+for(i in 1:5) {
+  # Lấy dữ liệu cho fold i (dữ liệu train và test)
+  train_data <- full_order_counts[-folds[[i]], ]
+  test_data <- full_order_counts[folds[[i]], ]
+  
+  # Chuẩn bị dữ liệu train và test
+  train_x <- as.matrix(train_data$Order_Count)
+  train_y <- as.matrix(train_data$Order_Count)
+  
+  test_x <- as.matrix(test_data$Order_Count)
+  test_y <- as.matrix(test_data$Order_Count)
+  
+  # Chuẩn bị dữ liệu cho LSTM (reshape thành (samples, timesteps, features))
+  train_x <- array(train_x, dim = c(length(train_x), 1, 1))
+  test_x <- array(test_x, dim = c(length(test_x), 1, 1))
+  
+  # Xây dựng mô hình LSTM
+  model <- keras_model_sequential() %>%
+    layer_lstm(units = 50, input_shape = c(1, 1), activation = 'relu') %>%
+    layer_dense(units = 1)
+  
+  # Biên dịch mô hình
+  model %>% compile(loss = 'mean_squared_error', optimizer = 'adam')
+  
+  # Huấn luyện mô hình
+  model %>% fit(train_x, train_y, epochs = 20, batch_size = 32, verbose = 0)
+  
+  # Dự đoán trên dữ liệu test
+  predictions <- model %>% predict(test_x)
+  
+  # Tính các chỉ số đánh giá
+  mse <- mse(test_y, predictions)
+  mae <- mae(test_y, predictions)
+  r_squared <- cor(test_y, predictions)^2
+  
+  # Tính Adjusted R²
+  n <- length(test_y)
+  p <- 1 # Vì ta chỉ sử dụng một đặc trưng (Order_Count) để dự đoán
+  adj_r_squared <- 1 - (1 - r_squared) * (n - 1) / (n - p - 1)
+  
+  # Lưu kết quả của fold i
+  mse_values <- c(mse_values, mse)
+  mae_values <- c(mae_values, mae)
+  r_squared_values <- c(r_squared_values, r_squared)
+  adj_r_squared_values <- c(adj_r_squared_values, adj_r_squared)
+  
+  cat("Fold", i, "\n")
+  cat("MSE: ", mse, "\n")
+  cat("MAE: ", mae, "\n")
+  cat("R²: ", r_squared, "\n")
+  cat("Adjusted R²: ", adj_r_squared, "\n\n")
+}
+
+# Tính trung bình của các chỉ số trên tất cả các fold
+mean_mse <- mean(mse_values)
+mean_mae <- mean(mae_values)
+mean_r_squared <- mean(r_squared_values)
+mean_adj_r_squared <- mean(adj_r_squared_values)
+
+cat("Mean MSE: ", mean_mse, "\n")
+cat("Mean MAE: ", mean_mae, "\n")
+cat("Mean R²: ", mean_r_squared, "\n")
+cat("Mean Adjusted R²: ", mean_adj_r_squared, "\n")
 
 
 
